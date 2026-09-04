@@ -1,0 +1,2 @@
+Streak Keeper initialized on Oracle Cloud VM.
+Timezone: America/Sao_Paulo (BRT UTC-3)
