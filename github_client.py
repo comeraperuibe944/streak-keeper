@@ -200,22 +200,34 @@ class GitHubClient:
         status, data = self._request(search_url)
 
         if status == 200 and "total_count" in data:
-            total = data.get("total_count", 0)
             items = data.get("items", [])
-            last_commit_time = None
-            last_commit_msg = None
-            last_repo = None
-            if items:
-                first = items[0]
-                last_commit_time = first.get("commit", {}).get("author", {}).get("date")
-                last_commit_msg = first.get("commit", {}).get("message")
-                last_repo = first.get("repository", {}).get("full_name")
+            valid_today_items = []
+            for it in items:
+                commit_author_date = it.get("commit", {}).get("author", {}).get("date")
+                if commit_author_date:
+                    try:
+                        dt = datetime.fromisoformat(commit_author_date.replace("Z", "+00:00")).astimezone(target_tz)
+                        if dt.strftime("%Y-%m-%d") == today_date_str:
+                            valid_today_items.append((it, dt))
+                    except Exception:
+                        pass
+
+            if valid_today_items:
+                first_it, first_dt = valid_today_items[0]
+                return {
+                    "has_committed_today": True,
+                    "commit_count": len(valid_today_items),
+                    "last_commit_time": first_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                    "last_commit_msg": first_it.get("commit", {}).get("message"),
+                    "last_repo": first_it.get("repository", {}).get("full_name"),
+                    "today_date": today_date_str
+                }
             return {
-                "has_committed_today": total > 0,
-                "commit_count": total,
-                "last_commit_time": last_commit_time,
-                "last_commit_msg": last_commit_msg,
-                "last_repo": last_repo,
+                "has_committed_today": False,
+                "commit_count": 0,
+                "last_commit_time": None,
+                "last_commit_msg": None,
+                "last_repo": None,
                 "today_date": today_date_str
             }
 
@@ -268,3 +280,40 @@ class GitHubClient:
                 for r in repos
             ]
         return []
+
+    def repo_exists(self, repo: str) -> bool:
+        repo = self.normalize_repo(repo)
+        status, _ = self._request(f"https://api.github.com/repos/{repo}")
+        return status == 200
+
+    def create_repo(self, name: str, description: str = "", private: bool = False, auto_init: bool = True):
+        url = "https://api.github.com/user/repos"
+        payload = {
+            "name": name,
+            "description": description,
+            "private": private,
+            "auto_init": auto_init
+        }
+        status, data = self._request(url, method="POST", data=payload)
+        if status in (200, 201):
+            return {
+                "success": True,
+                "name": data.get("name"),
+                "full_name": data.get("full_name"),
+                "html_url": data.get("html_url"),
+                "private": data.get("private"),
+                "default_branch": data.get("default_branch", "main")
+            }
+        else:
+            err_msg = data.get("message", f"HTTP {status}")
+            raise RuntimeError(f"GitHub API Error: {err_msg}")
+
+    def delete_repo(self, repo: str):
+        repo = self.normalize_repo(repo)
+        url = f"https://api.github.com/repos/{repo}"
+        status, data = self._request(url, method="DELETE")
+        if status in (200, 204):
+            return {"success": True, "message": f"Repository {repo} deleted"}
+        else:
+            err_msg = data.get("message", f"HTTP {status}") if isinstance(data, dict) else f"HTTP {status}"
+            raise RuntimeError(f"GitHub API Error: {err_msg}")

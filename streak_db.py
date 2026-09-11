@@ -1,8 +1,9 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
-DEFAULT_DB_PATH = "/home/ubuntu/streak-keeper/streak.db"
+DEFAULT_DB_PATH = os.environ.get("STREAK_DB_PATH", os.path.join(os.path.dirname(__file__), "streak.db"))
+TARGET_TZ = timezone(timedelta(hours=-3))
 
 def get_db(db_path=DEFAULT_DB_PATH):
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -54,16 +55,18 @@ def init_db(db_path=DEFAULT_DB_PATH):
         )
     """)
     
-    # Default settings
     default_settings = {
         "fallback_enabled": "true",
-        "fallback_time": "23:15",
+        "fallback_time": "20:45",
+        "repo_post_time": "06:00",
         "fallback_repo": "comeraperuibe944/streak-keeper",
         "check_manual_commits_first": "true",
         "author_name": "comeraperuibe944",
         "author_email": "juanperuibe6@gmail.com",
         "fallback_type": "telemetry",
-        "last_fallback_date": ""
+        "last_fallback_date": "",
+        "last_repo_post_date": "",
+        "last_action_date": ""
     }
     
     for k, v in default_settings.items():
@@ -91,7 +94,7 @@ def update_settings(updates: dict, db_path=DEFAULT_DB_PATH):
 def add_to_queue(repo, file_path, commit_message, content, branch="main", scheduled_at=None, db_path=DEFAULT_DB_PATH):
     conn = get_db(db_path)
     c = conn.cursor()
-    created_at = datetime.now().isoformat()
+    created_at = datetime.now(TARGET_TZ).isoformat()
     c.execute("""
         INSERT INTO queue (repo, branch, file_path, commit_message, content, status, created_at, scheduled_at)
         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
@@ -123,7 +126,7 @@ def get_queue_item(item_id: int, db_path=DEFAULT_DB_PATH):
 def update_queue_item(item_id: int, status: str, commit_sha: str = None, error: str = None, db_path=DEFAULT_DB_PATH):
     conn = get_db(db_path)
     c = conn.cursor()
-    executed_at = datetime.now().isoformat() if status in ('completed', 'failed') else None
+    executed_at = datetime.now(TARGET_TZ).isoformat() if status in ('completed', 'failed') else None
     c.execute("""
         UPDATE queue 
         SET status = ?, commit_sha = ?, error = ?, executed_at = ?
@@ -144,7 +147,7 @@ def delete_queue_item(item_id: int, db_path=DEFAULT_DB_PATH):
 def record_history(repo, commit_sha, commit_message, commit_type, status, details=None, db_path=DEFAULT_DB_PATH):
     conn = get_db(db_path)
     c = conn.cursor()
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now(TARGET_TZ).isoformat()
     c.execute("""
         INSERT INTO history (repo, commit_sha, commit_message, commit_type, timestamp, status, details)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -161,3 +164,34 @@ def get_history(limit=50, db_path=DEFAULT_DB_PATH):
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
+
+def check_action_done_today(db_path=DEFAULT_DB_PATH, tz_offset_hours=-3) -> bool:
+    tz = timezone(timedelta(hours=tz_offset_hours))
+    today_str = datetime.now(tz).strftime("%Y-%m-%d")
+    
+    settings = get_settings(db_path)
+    if settings.get("last_action_date") == today_str or settings.get("last_fallback_date") == today_str:
+        return True
+        
+    conn = get_db(db_path)
+    c = conn.cursor()
+    c.execute("SELECT timestamp, status, commit_type FROM history WHERE status = 'success' ORDER BY id DESC LIMIT 50")
+    rows = c.fetchall()
+    conn.close()
+    
+    for r in rows:
+        ts_str = r["timestamp"]
+        if not ts_str:
+            continue
+        try:
+            dt = datetime.fromisoformat(ts_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc).astimezone(tz)
+            else:
+                dt = dt.astimezone(tz)
+            if dt.strftime("%Y-%m-%d") == today_str and r["commit_type"] in ("queued", "fallback", "manual_fallback"):
+                return True
+        except Exception:
+            if ts_str.startswith(today_str):
+                return True
+    return False
