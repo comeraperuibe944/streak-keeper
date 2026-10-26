@@ -1,19 +1,19 @@
 {
-  "snapshot_time": "2026-10-26 14:27:06",
+  "snapshot_time": "2026-10-26 14:45:10",
   "date": "2026-10-26",
   "hostname": "instance-20260830-1742",
   "os": "Linux 6.17.0-1020-oracle",
   "architecture": "x86_64",
-  "uptime": "56d 20h 35m",
-  "cpu_usage_percent": 0.0,
-  "ram_used_mb": 628.83,
+  "uptime": "56d 20h 53m",
+  "cpu_usage_percent": 100.0,
+  "ram_used_mb": 625.39,
   "ram_total_mb": 954.01,
-  "ram_percent": 65.9,
+  "ram_percent": 65.6,
   "load_avg_1_5_15m": [
-    0.2,
-    0.07,
-    0.01
+    0.26,
+    0.1,
+    0.03
   ],
-  "session_uuid": "99ba24c841b641e3",
+  "session_uuid": "941ec09ea6834995",
   "agent": "StreakKeeper-Daemon"
 }
